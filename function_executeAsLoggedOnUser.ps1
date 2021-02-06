@@ -6,8 +6,8 @@
     This function will use advanced API's to get the access token of the currently logged-in user, in order to execute a script in the users context.
     This is useful for scripts that are run in the local system users context.
     .REQUIREMENTS
-    This script myst be run from the context of the SYSTEM account.
-    Designes to be run by Intune or SCCM Agent.
+    This script must be run in the context of the SYSTEM account.
+    Designed to be run by Intune or SCCM Agent.
     Absolute paths required.
     .EXAMPLE
     Running a powershell script visible to the user

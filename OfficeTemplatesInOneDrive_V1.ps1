@@ -12,7 +12,8 @@ VERSION: 1a
 PREREQ: Create a document library in SharePoint Online, and give the users "Viewer" permissions. (So they can't override templates).
         Create three subfolders named "Word", "Excel" and "PowerPoint" respectively, as registry entries will be made for these folders.
         Get the "ODurl" by pressing the "SYNC" button in the sharepoint site, using the old InternetExplorer, which will show the URL (Other browsers will just sync right away!)
-        It's very important that the URL be formattet correctly for use in this script, notice the -f parameter at the end of the ODurl string, when replacing it, read the comment before the string line!
+        It's very important that the URL be formattet correctly for use in this script, 
+        when replacing it, read the comment before the string line!
 .COPYRIGHT
 @michael_mardahl / https://www.iphase.dk
 Licensed under the MIT license.
@@ -39,43 +40,95 @@ $OfficeVersionCode = "16.0"
 
 ####################################################
 #
+# FUNCTIONS SECTION
+#
+####################################################
+
+function WaitForOneDrive () {
+
+    <#
+    .SYNOPSIS
+    This function will check to see if OneDrive is Running on the local machine
+    .DESCRIPTION
+    The function poll's for the OneDrive process every second, and will resume script execution, once it's running
+    .EXAMPLE
+    WaitForOneDrive
+    .NOTES
+    NAME: WaitforOneDrive 
+    #>
+
+    $started = $false
+    $maxWaitSec = 300 #maximum number of seconds we are willing to wait for the OneDrive Process. (not an exact counter, might be a bit longer)
+    $wait = 0 #Initial Wait counter
+
+    Do {
+
+        $status = Get-Process OneDrive -ErrorAction SilentlyContinue #Looking for the OneDrive Process
+
+        If (!($status)) { 
+            Write-Output 'Waiting for OneDrive to start...'
+            Start-Sleep -Seconds 1 
+        } Else { 
+            Write-Output 'OneDrive has started yo!'
+            $started = $true 
+        }
+
+        $wait++ #increase wait counter
+
+        If ($wait -eq $maxWaitSec) {
+            Write-Output "Failed to find OneDrive Process. Exiting Script!"
+            Exit
+        }
+
+    }
+    Until ( $started )
+
+}
+
+####################################################
+#
 # EXECUTE SECTION
 #
 ####################################################
 # Now doing what needs to be done...
 
 # Starting our logging to the users TEMP folder.
-$logfileName = "OfficeTemplatesInOneDrive_{0}.log" -f "$env:USERNAME"
-Start-Transcript -Path $(Join-Path $env:temp "$logfileName") -Force
+$logfileName = "OfficeTemplatesInOneDrive_{0}.log" -f $env:USERNAME
+Start-Transcript -Path $(Join-Path -Path $env:TEMP -ChildPath $logfileName) -Force
 $ODurl = "$ODurl&userEmail=$(whoami /upn)"
+
+# Waiting for OneDrive Process...
+WaitForOneDrive
 
 Write-Output "Adding folder to OneDrive for user: $($env:USERNAME) - URL: $ODurl"
 
 # Verifying that the folder does not already exists (If so it's likely they are already syncing it)
 # You will need to delete this folder and remove the sync from OneDrive settings, in order to reapply this script!
-if (Test-Path $SyncPath) {
+if (Test-Path -Path $SyncPath -PathType Container) {
     Write-Output "$($env:USERNAME) already has the folder in OneDrive!"
+    Stop-Transcript
     exit 0
 }
 
 # Telling OneDrive to sync the URL.
 try {
-    Start $ODurl -ErrorAction Stop
-} catch {
-    throw "failed to launch OneDrive with: $ODurl"
-} finally {
+    Start-Process $ODurl -ErrorAction Stop
+}
+catch {
+    throw "Failed to launch OneDrive with: $ODurl"
     Stop-Transcript
 }
 
-if($pinned){
-    sleep -Seconds 30 #lets just make sure we waited untill OneDrive has some data...
-    attrib.exe  +P -U "$SyncPath" /S /D
-    attrib.exe  +P -U "$SyncPath\*.*" /S /D
+if ($pinned) {
+    #Lets just make sure we waited untill OneDrive has some data...
+    while ($null -eq (Get-ChildItem -Path $SyncPath)) {
+        Start-Sleep -Seconds 30
+    }
+    New-PSDrive -Name $SyncPath -PSProvider FileSystem -Root $SyncPath -Persist
 }
 
 ### Setup Templates locations in Word, Excel and Powerpoint
 # Also sets the default startup Tab, so templates are shown
-
 
 # Word
 New-ItemProperty "HKCU:\Software\Microsoft\Office\$OfficeVersionCode\Word\Options" -Name "PersonalTemplates" -Value "$SyncPath\Word" -PropertyType ExpandString -Force -Confirm:$false
@@ -88,7 +141,6 @@ New-ItemProperty "HKCU:\Software\Microsoft\Office\$OfficeVersionCode\Excel\Optio
 # PowerPoint
 New-ItemProperty "HKCU:\Software\Microsoft\Office\$OfficeVersionCode\PowerPoint\Options" -Name "PersonalTemplates" -Value "$SyncPath\PowerPoint" -PropertyType ExpandString -Force -Confirm:$false
 New-ItemProperty "HKCU:\Software\Microsoft\Office\$OfficeVersionCode\PowerPoint\Options" -Name "officestartdefaulttab" -Value "1" -PropertyType DWord -Force -Confirm:$false
-
 
 Stop-Transcript
 
